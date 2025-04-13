@@ -53,17 +53,31 @@ class UserService:
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
         try:
             validated_data = UserCreate(**user_data).model_dump()
+            
+            # Check for existing email
             existing_user = await cls.get_by_email(session, validated_data['email'])
             if existing_user:
                 logger.error("User with given email already exists.")
                 return None
+            
+            # Check for existing nickname if provided
+            if 'nickname' in validated_data and validated_data['nickname']:
+                existing_nickname = await cls.get_by_nickname(session, validated_data['nickname'])
+                if existing_nickname:
+                    logger.error("User with given nickname already exists.")
+                    return None
+                    
             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             new_user = User(**validated_data)
-            new_user.verification_token = generate_verification_token()
-            new_nickname = generate_nickname()
-            while await cls.get_by_nickname(session, new_nickname):
+            
+            # Generate unique nickname if not provided
+            if not new_user.nickname:
                 new_nickname = generate_nickname()
-            new_user.nickname = new_nickname
+                while await cls.get_by_nickname(session, new_nickname):
+                    new_nickname = generate_nickname()
+                new_user.nickname = new_nickname
+                
+            new_user.verification_token = generate_verification_token()
             session.add(new_user)
             await session.commit()
             await email_service.send_verification_email(new_user)
@@ -81,6 +95,14 @@ class UserService:
 
             if 'password' in validated_data:
                 validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
+                
+            # Check nickname uniqueness if it's being updated
+            if 'nickname' in validated_data and validated_data['nickname']:
+                existing_user = await cls.get_by_nickname(session, validated_data['nickname'])
+                if existing_user and existing_user.id != user_id:
+                    logger.error("Nickname already taken by another user.")
+                    return None
+                    
             query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
             await cls._execute_query(session, query)
             updated_user = await cls.get_by_id(session, user_id)

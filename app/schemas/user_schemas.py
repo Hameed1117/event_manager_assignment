@@ -24,7 +24,14 @@ def validate_url(url: Optional[str]) -> Optional[str]:
 
 class UserBase(BaseModel):
     email: EmailStr = Field(..., example="john.doe@example.com")
-    nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())
+    nickname: Optional[str] = Field(
+        None, 
+        min_length=3, 
+        max_length=50,  # Added maximum length constraint
+        pattern=r'^[\w-]+$', 
+        example=generate_nickname(),
+        description="Nickname must be 3-50 characters and contain only letters, numbers, underscores, and hyphens."
+    )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
@@ -33,6 +40,18 @@ class UserBase(BaseModel):
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
 
     _validate_urls = validator('profile_picture_url', 'linkedin_profile_url', 'github_profile_url', pre=True, allow_reuse=True)(validate_url)
+    
+    @validator('nickname')
+    def validate_nickname(cls, v):
+        if v is None:
+            return v
+        if len(v) < 3:
+            raise ValueError("Nickname must be at least 3 characters long")
+        if len(v) > 50:
+            raise ValueError("Nickname cannot exceed 50 characters")
+        if not re.match(r'^[\w-]+$', v):
+            raise ValueError("Nickname can only contain letters, numbers, underscores, and hyphens")
+        return v
  
     class Config:
         from_attributes = True
@@ -40,10 +59,28 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     email: EmailStr = Field(..., example="john.doe@example.com")
     password: str = Field(..., example="Secure*1234")
+    
+    @validator('password')
+    def password_must_be_strong(cls, v):
+        """Validate that the password is strong enough."""
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        
+        # Check for at least one uppercase, one lowercase, one digit, and one special character
+        if not re.search(r'[A-Z]', v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r'[a-z]', v):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r'[0-9]', v):
+            raise ValueError("Password must contain at least one digit")
+        if not re.search(r'[^a-zA-Z0-9]', v):
+            raise ValueError("Password must contain at least one special character")
+        
+        return v
 
 class UserUpdate(UserBase):
     email: Optional[EmailStr] = Field(None, example="john.doe@example.com")
-    nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example="john_doe123")
+    nickname: Optional[str] = Field(None, min_length=3, max_length=50, pattern=r'^[\w-]+$', example="john_doe123")
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
@@ -61,7 +98,7 @@ class UserResponse(UserBase):
     id: uuid.UUID = Field(..., example=uuid.uuid4())
     role: UserRole = Field(default=UserRole.AUTHENTICATED, example="AUTHENTICATED")
     email: EmailStr = Field(..., example="john.doe@example.com")
-    nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())    
+    nickname: Optional[str] = Field(None, min_length=3, max_length=50, pattern=r'^[\w-]+$', example=generate_nickname())    
     role: UserRole = Field(default=UserRole.AUTHENTICATED, example="AUTHENTICATED")
     is_professional: Optional[bool] = Field(default=False, example=True)
 
