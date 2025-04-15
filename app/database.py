@@ -1,25 +1,48 @@
+# app/database.py
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+import os
 
+# Keep the existing setup
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/appdb")
+engine = create_async_engine(DATABASE_URL, echo=True)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 
+# Add the Database class that main.py expects
 class Database:
-    """Handles database connections and sessions."""
-    _engine = None
-    _session_factory = None
-
+    engine = None
+    debug = False
+    
     @classmethod
-    def initialize(cls, database_url: str, echo: bool = False):
-        """Initialize the async engine and sessionmaker."""
-        if cls._engine is None:  # Ensure engine is created once
-            cls._engine = create_async_engine(database_url, echo=echo, future=True)
-            cls._session_factory = sessionmaker(
-                bind=cls._engine, class_=AsyncSession, expire_on_commit=False, future=True
-            )
-
+    def initialize(cls, database_url, debug=False):
+        """Initialize the database connection."""
+        cls.engine = create_async_engine(database_url, echo=debug)
+        cls.debug = debug
+    
     @classmethod
-    def get_session_factory(cls):
-        """Returns the session factory, ensuring it's initialized."""
-        if cls._session_factory is None:
-            raise ValueError("Database not initialized. Call `initialize()` first.")
-        return cls._session_factory
+    async def get_session(cls):
+        """Get a database session."""
+        if cls.engine is None:
+            raise Exception("Database not initialized")
+        
+        async_session = sessionmaker(
+            cls.engine, class_=AsyncSession, expire_on_commit=False
+        )
+        async with async_session() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
+
+# Keep the get_db function for compatibility
+async def get_db():
+    """
+    Get database session.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()

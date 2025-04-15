@@ -1,52 +1,89 @@
-from builtins import Exception, dict, str
-from fastapi import Depends, HTTPException
+# app/dependencies.py
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import Database
-from app.utils.template_manager import TemplateManager
+from app.utils.security import verify_token
+from app.database import get_db
 from app.services.email_service import EmailService
-from app.services.jwt_service import decode_token
-from settings.config import Settings
-from fastapi import Depends
+from app.core.config import get_settings
 
-def get_settings() -> Settings:
-    """Return application settings."""
-    return Settings()
+# OAuth2 password bearer token scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-def get_email_service() -> EmailService:
-    template_manager = TemplateManager()
-    return EmailService(template_manager=template_manager)
+def get_email_service():
+    """Get email service instance."""
+    return EmailService()
 
-async def get_db() -> AsyncSession:
-    """Dependency that provides a database session for each request."""
-    async_session_factory = Database.get_session_factory()
-    async with async_session_factory() as session:
-        try:
-            yield session
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+async def get_current_user(db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)):
+    """
+    Dependency to get the current authenticated user.
+    
+    Args:
+        db: Database session
+        token: JWT token from authorization header
         
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    payload = decode_token(token)
+    Returns:
+        User: Current authenticated user
+        
+    Raises:
+        HTTPException: If token is invalid or user not found
+    """
+    # Verify the token
+    payload = verify_token(token)
     if payload is None:
-        raise credentials_exception
-    user_id: str = payload.get("sub")
-    user_role: str = payload.get("role")
-    if user_id is None or user_role is None:
-        raise credentials_exception
-    return {"user_id": user_id, "role": user_role}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Get the user ID from the token
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Import UserService here to avoid circular import
+    from app.services.user_service import UserService
+    
+    # Get the user from the database
+    user = await UserService.get_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Check if user is active
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email not verified",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return user
 
-def require_role(role: str):
-    def role_checker(current_user: dict = Depends(get_current_user)):
-        if current_user["role"] not in role:
-            raise HTTPException(status_code=403, detail="Operation not permitted")
-        return current_user
-    return role_checker
+async def get_current_active_user(current_user = Depends(get_current_user)):
+    """
+    Dependency to get the current active user.
+    
+    Args:
+        current_user: Current authenticated user
+        
+    Returns:
+        User: Current active user
+        
+    Raises:
+        HTTPException: If user is inactive
+    """
+    if current_user.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is locked",
+        )
+    return current_user
