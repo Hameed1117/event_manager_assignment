@@ -61,3 +61,13 @@ uvicorn==0.29.0
 validators==0.24.0
 markdown2
 pyjwt
+fastapi==0.103.0
+pydantic==1.10.8 
+pydantic-settings==2.0.3  
+uvicorn
+sqlalchemy
+asyncpg
+python-jose
+python-multipart
+passlib
+bcrypt

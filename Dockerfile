@@ -21,12 +21,20 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Explicitly install a compatible pydantic version before other requirements
+RUN pip install --upgrade pip \
+    && pip install "pydantic<2.0.0"
+
+# Add this line after the pip install --upgrade pip line:
+    RUN pip install --upgrade pip \
+    && pip install "pydantic<2.0.0" \
+    && pip install -r requirements.txt
+
 # Copy only the requirements, to cache them in Docker layer
 COPY ./requirements.txt /myapp/requirements.txt
 
-# Upgrade pip and install Python dependencies from requirements file
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
+# Install Python dependencies from requirements file
+RUN pip install -r requirements.txt
 
 # Add a non-root user and switch to it
 RUN useradd -m myuser
