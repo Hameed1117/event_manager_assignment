@@ -27,16 +27,20 @@ class UserBase(BaseModel):
     nickname: Optional[str] = Field(
         None, 
         min_length=3, 
-        max_length=50,  # Added maximum length constraint
+        max_length=50,
         pattern=r'^[\w-]+$', 
         example=generate_nickname(),
         description="Nickname must be 3-50 characters and contain only letters, numbers, underscores, and hyphens."
     )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
-    bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
+    bio: Optional[str] = Field(
+        None, 
+        max_length=500,
+        example="Experienced software developer specializing in web applications."
+    )
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
 
     _validate_urls = validator('profile_picture_url', 'linkedin_profile_url', 'github_profile_url', pre=True, allow_reuse=True)(validate_url)
@@ -51,6 +55,14 @@ class UserBase(BaseModel):
             raise ValueError("Nickname cannot exceed 50 characters")
         if not re.match(r'^[\w-]+$', v):
             raise ValueError("Nickname can only contain letters, numbers, underscores, and hyphens")
+        return v
+    
+    @validator('bio')
+    def validate_bio(cls, v):
+        if v is None:
+            return v
+        if len(v) > 500:
+            raise ValueError("Bio cannot exceed 500 characters")
         return v
  
     class Config:
@@ -83,9 +95,9 @@ class UserUpdate(UserBase):
     nickname: Optional[str] = Field(None, min_length=3, max_length=50, pattern=r'^[\w-]+$', example="john_doe123")
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
-    bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
+    bio: Optional[str] = Field(None, max_length=500, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
 
     @root_validator(pre=True)

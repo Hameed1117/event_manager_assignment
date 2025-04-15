@@ -90,9 +90,23 @@ class UserService:
     @classmethod
     async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
         try:
-            # validated_data = UserUpdate(**update_data).dict(exclude_unset=True)
+            # Get the user to update
+            user = await cls.get_by_id(session, user_id)
+            if not user:
+                logger.error(f"User with ID {user_id} not found.")
+                return None
+                
+            # Validate the update data using Pydantic
             validated_data = UserUpdate(**update_data).dict(exclude_unset=True)
 
+            # Check nickname uniqueness if it's being updated
+            if 'nickname' in validated_data and validated_data['nickname']:
+                existing_user = await cls.get_by_nickname(session, validated_data['nickname'])
+                if existing_user and existing_user.id != user_id:
+                    logger.error("Nickname already taken by another user.")
+                    return None
+
+            # Handle password updates if included
             if 'password' in validated_data:
                 validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
                 
@@ -103,18 +117,25 @@ class UserService:
                     logger.error("Nickname already taken by another user.")
                     return None
                     
-            query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
-            await cls._execute_query(session, query)
-            updated_user = await cls.get_by_id(session, user_id)
-            if updated_user:
-                session.refresh(updated_user)  # Explicitly refresh the updated user object
-                logger.info(f"User {user_id} updated successfully.")
-                return updated_user
-            else:
-                logger.error(f"User {user_id} not found after update attempt.")
+            
+            # Update only the provided fields
+            for field, value in validated_data.items():
+                setattr(user, field, value)
+                
+            # Save changes
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            
+            logger.info(f"User {user_id} updated successfully.")
+            return user
+        except ValidationError as e:
+            logger.error(f"Validation error during user update: {e}")
+            await session.rollback()
             return None
         except Exception as e:  # Broad exception handling for debugging
             logger.error(f"Error during user update: {e}")
+            await session.rollback()
             return None
 
     @classmethod
