@@ -24,7 +24,7 @@ All these fixes have been merged into the main branch after thorough testing and
 
 ## Docker Image
 
-The Docker image for this project is available on Dockerhub at: [hameed1117/event-manager-api](https://hub.docker.com/r/hameed1117/event-manager-api)
+The Docker image for this project is available on Dockerhub at: [khadhar17/event-manager-api](https://hub.docker.com/repository/docker/khadhar17/event-manager-api/general)
 
 ## Reflection
 
