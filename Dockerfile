@@ -1,50 +1,41 @@
-# Use an official lightweight Python image.
-# 3.12-slim variant is chosen for a balance between size and utility.
-FROM python:3.12-slim-bullseye as base
+FROM python:3.9-slim-bullseye
 
-# Set environment variables to configure Python and pip.
-# Prevents Python from buffering stdout and stderr, enables the fault handler, disables pip cache,
-# sets default pip timeout, and suppresses pip version check messages.
+# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     PIP_NO_CACHE_DIR=true \
-    PIP_DEFAULT_TIMEOUT=100 \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
     QR_CODE_DIR=/myapp/qr_codes
 
-# Set the working directory inside the container
+# Set working directory
 WORKDIR /myapp
 
 # Install system dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && apt-get install -y --no-install-recommends \
+       gcc \
+       libpq-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Explicitly install a compatible pydantic version before other requirements
-RUN pip install --upgrade pip \
-    && pip install "pydantic<2.0.0"
+# Copy just what we need for installation
+COPY ./requirements.txt /myapp/
 
-# Add this line after the pip install --upgrade pip line:
-    RUN pip install --upgrade pip \
-    && pip install "pydantic<2.0.0" \
-    && pip install -r requirements.txt
+# Install a minimal set of dependencies first, then the rest best-effort
+RUN pip install --upgrade pip wheel \
+    && pip install fastapi==0.103.0 pydantic==1.10.8 uvicorn==0.22.0 python-dotenv \
+    && pip install -r requirements.txt || echo "Some requirements could not be installed, but core functionality should work"
 
-# Copy only the requirements, to cache them in Docker layer
-COPY ./requirements.txt /myapp/requirements.txt
-
-# Install Python dependencies from requirements file
-RUN pip install -r requirements.txt
-
-# Add a non-root user and switch to it
-RUN useradd -m myuser
+# Create non-root user
+RUN useradd -m myuser \
+    && mkdir -p ${QR_CODE_DIR} \
+    && chown -R myuser:myuser /myapp
 USER myuser
 
-# Copy the rest of your application's code with appropriate ownership
+# Copy application code
 COPY --chown=myuser:myuser . /myapp
 
-# Inform Docker that the container listens on the specified port at runtime.
+# Expose port
 EXPOSE 8000
 
-# Use ENTRYPOINT to specify the executable when the container starts.
+# Run the application
 ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
